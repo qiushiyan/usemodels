@@ -45,26 +45,18 @@ use_glmnet <- function(formula, data, prefix = "glmnet", verbose = FALSE,
   on.exit(unlink(pth))
 
   rec_cl <- initial_recipe_call(match.call())
-  rec_syntax <-
-    paste0(prefix, "_recipe") %>%
-    assign_value(!!rec_cl)
-
   rec <- recipes::recipe(formula, data)
+  rec_syntax <- use_recipe(
+    prefix,
+    rec_cl,
+    rec,
+    add_dummy = TRUE,
+    add_normalization = TRUE,
+    verbose = verbose,
+    colors = colors
+  )
 
-  rec_syntax <-
-    rec_syntax %>%
-    factor_check(rec, add = verbose, colors = colors)
-
-  if (has_factor_pred(rec)) {
-    rec_syntax <-
-      add_steps_dummy_vars(rec_syntax, add = verbose, colors = colors)
-  }
-  rec_syntax <-
-    rec_syntax %>%
-    add_comment(paste(reg_msg, zv_msg), add = verbose, colors = colors) %>%
-    add_steps_normalization()
-
-  mod_mode <- model_mode(rec)
+  mode <- model_mode(rec)
 
   if (tune) {
     prm <- rlang::exprs(penalty = tune(), mixture = tune())
@@ -72,29 +64,16 @@ use_glmnet <- function(formula, data, prefix = "glmnet", verbose = FALSE,
     prm <- NULL
   }
 
-  if (mod_mode == "classification") {
+  if (mode == "classification") {
     num_lvl <- y_lvl(rec)
     if (num_lvl == 2) {
-      mod_syntax <-
-        paste0(prefix, "_spec") %>%
-        assign_value(!!rlang::call2("logistic_reg", !!!prm)) %>%
-        pipe_value(set_mode("classification"))
+      mod_syntax <- use_mod(prefix, "logistic_reg", "glmnet", mode, prm)
     } else {
-      mod_syntax <-
-        paste0(prefix, "_spec") %>%
-        assign_value(!!rlang::call2("multinom_reg", !!!prm)) %>%
-        pipe_value(set_mode("classification"))
+      mod_syntax <- use_mod(prefix, "multinom_reg", "glmnet", mode, prm)
     }
   } else {
-    mod_syntax <-
-      paste0(prefix, "_spec") %>%
-      assign_value(!!rlang::call2("linear_reg", !!!prm)) %>%
-      pipe_value(set_mode("regression"))
+    mod_syntax <- use_mod(prefix, "linear_reg", "glmnet", mode, prm)
   }
-
-  mod_syntax <-
-    mod_syntax %>%
-    pipe_value(set_engine("glmnet"))
 
   route(rec_syntax, path = pth)
   route(mod_syntax, path = pth)
@@ -126,27 +105,17 @@ use_xgboost <- function(formula, data, prefix = "xgboost", verbose = FALSE,
   on.exit(unlink(pth))
 
   rec_cl <- initial_recipe_call(match.call())
-  rec_syntax <-
-    paste0(prefix, "_recipe") %>%
-    assign_value(!!rec_cl)
-
   rec <- recipe(formula, data)
 
-  rec_syntax <-
-    rec_syntax %>%
-    factor_check(rec, add = verbose, colors = colors)
-
-  if (has_factor_pred(rec)) {
-    rec_syntax <-
-      add_steps_dummy_vars(
-        rec_syntax,
-        hot = TRUE,
-        add = verbose,
-        colors = colors
-      )
-  }
-
-  rec_syntax <- pipe_value(rec_syntax, step_zv(all_predictors()))
+  rec_syntax <- use_recipe(
+    prefix,
+    rec_cl, rec,
+    add_dummy = FALSE,
+    add_normalization = FALSE,
+    verbose = verbose,
+    colors = colors
+  ) %>%
+    pipe_value(step_zv(all_predictors()))
 
   if (tune) {
     prm <-
@@ -158,11 +127,7 @@ use_xgboost <- function(formula, data, prefix = "xgboost", verbose = FALSE,
     prm <- NULL
   }
 
-  mod_syntax <-
-    paste0(prefix, "_spec") %>%
-    assign_value(!!rlang::call2("boost_tree", !!!prm)) %>%
-    pipe_value(set_mode(!!model_mode(rec))) %>%
-    pipe_value(set_engine("xgboost"))
+  mod_syntax <- use_mod(prefix, "boost_tree", "xgboost", model_mode(rec), prm)
 
   route(rec_syntax, path = pth)
   route(mod_syntax, path = pth)
@@ -186,24 +151,17 @@ use_kknn <- function(formula, data, prefix = "kknn", verbose = FALSE,
   on.exit(unlink(pth))
 
   rec_cl <- initial_recipe_call(match.call())
-  rec_syntax <-
-    paste0(prefix, "_recipe") %>%
-    assign_value(!!rec_cl)
-
   rec <- recipes::recipe(formula, data)
 
-  rec_syntax <-
-    rec_syntax %>%
-    factor_check(rec, add = verbose, colors = colors)
-
-  if (has_factor_pred(rec)) {
-    rec_syntax <-
-      add_steps_dummy_vars(rec_syntax, add = verbose, colors = colors)
-  }
-  rec_syntax <-
-    rec_syntax %>%
-    add_comment(paste(dist_msg, zv_msg), add = verbose, colors = colors) %>%
-    add_steps_normalization()
+  rec_syntax <- use_recipe(
+    prefix,
+    rec_cl,
+    rec,
+    add_dummy = TRUE,
+    add_normalization = TRUE,
+    verbose = verbose,
+    colors = colors
+  )
 
   if (tune) {
     prm <- rlang::exprs(neighbors = tune(), weight_func = tune())
@@ -211,11 +169,7 @@ use_kknn <- function(formula, data, prefix = "kknn", verbose = FALSE,
     prm <- NULL
   }
 
-  mod_syntax <-
-    paste0(prefix, "_spec") %>%
-    assign_value(!!rlang::call2("nearest_neighbor", !!!prm)) %>%
-    pipe_value(set_mode(!!model_mode(rec))) %>%
-    pipe_value(set_engine("kknn"))
+  mod_syntax <- use_mod(prefix, "nearest_neighbor", "kknn", model_mode(rec), prm)
 
   route(rec_syntax, path = pth)
   route(mod_syntax, path = pth)
@@ -239,16 +193,17 @@ use_ranger <- function(formula, data, prefix = "ranger", verbose = FALSE,
   on.exit(unlink(pth))
 
   rec_cl <- initial_recipe_call(match.call())
-  rec_syntax <-
-    paste0(prefix, "_recipe") %>%
-    assign_value(!!rec_cl)
-
   rec <- recipes::recipe(formula, data)
 
-  rec_syntax <-
-    rec_syntax %>%
-    factor_check(rec, add = verbose, colors = colors)
-
+  rec_syntax <- use_recipe(
+    prefix,
+    rec_cl,
+    rec,
+    add_dummy = FALSE,
+    add_normalization = FALSE,
+    verbose = verbose,
+    colors = colors
+  )
   # TODO add a check for the factor levels that are an issue for
 
   if (tune) {
@@ -257,11 +212,7 @@ use_ranger <- function(formula, data, prefix = "ranger", verbose = FALSE,
     prm <- prm <- rlang::exprs(trees = 1000)
   }
 
-  mod_syntax <-
-    paste0(prefix, "_spec") %>%
-    assign_value(!!rlang::call2("rand_forest", !!!prm)) %>%
-    pipe_value(set_mode(!!model_mode(rec))) %>%
-    pipe_value(set_engine("ranger"))
+  mod_syntax <- use_mod(prefix, "rand_forest", "ranger", model_mode(rec), prm)
 
   route(rec_syntax, path = pth)
   route(mod_syntax, path = pth)
@@ -285,22 +236,18 @@ use_earth <- function(formula, data, prefix = "earth", verbose = FALSE,
   on.exit(unlink(pth))
 
   rec_cl <- initial_recipe_call(match.call())
-  rec_syntax <-
-    paste0(prefix, "_recipe") %>%
-    assign_value(!!rec_cl)
-
   rec <- recipe(formula, data)
 
-  rec_syntax <-
-    rec_syntax %>%
-    factor_check(rec, add = verbose, colors = colors)
-
-  if (has_factor_pred(rec)) {
-    rec_syntax <-
-      add_steps_dummy_vars(rec_syntax, add = verbose, colors = colors)
-  }
-
-  rec_syntax <- pipe_value(rec_syntax, step_zv(all_predictors()))
+  rec_syntax <- use_recipe(
+    prefix,
+    rec_cl,
+    rec,
+    add_dummy = FALSE,
+    add_normalization = FALSE,
+    verbose = verbose,
+    colors = colors
+  ) %>%
+    pipe_value(step_zv(all_predictors()))
 
   if (tune) {
     prm <-
@@ -311,11 +258,7 @@ use_earth <- function(formula, data, prefix = "earth", verbose = FALSE,
     prm <- NULL
   }
 
-  mod_syntax <-
-    paste0(prefix, "_spec") %>%
-    assign_value(!!rlang::call2("mars", !!!prm)) %>%
-    pipe_value(set_mode(!!model_mode(rec))) %>%
-    pipe_value(set_engine("earth"))
+  mod_syntax <- use_mod(prefix, "mars", "earth", model_mode(rec), prm)
 
   route(rec_syntax, path = pth)
   route(mod_syntax, path = pth)
@@ -359,19 +302,22 @@ use_cubist <- function(formula, data, prefix = "cubist", verbose = FALSE,
   on.exit(unlink(pth))
 
   rec_cl <- initial_recipe_call(match.call())
-  rec_syntax <-
-    paste0(prefix, "_recipe") %>%
-    assign_value(!!rec_cl)
-
   rec <- recipes::recipe(formula, data)
-  if (model_mode(rec) != "regression") {
+  mode <- model_mode(rec)
+  if (rec != "regression") {
     rlang::abort("Cubist models are only for regression")
   }
-  rec_syntax <-
-    rec_syntax %>%
-    factor_check(rec, add = verbose, colors = colors)
 
-  rec_syntax <- pipe_value(rec_syntax, step_zv(all_predictors()))
+  rec_syntax <- use_recipe(
+    prefix,
+    rec_cl,
+    rec,
+    add_dummy = FALSE,
+    add_normalization = FALSE,
+    verbose = verbose,
+    colors = colors
+  ) %>%
+    pipe_value(step_zv(all_predictors()))
 
   if (tune) {
     prm <- rlang::exprs(committees = tune(), neighbors = tune())
@@ -379,10 +325,7 @@ use_cubist <- function(formula, data, prefix = "cubist", verbose = FALSE,
     prm <- NULL
   }
 
-  mod_syntax <-
-    paste0(prefix, "_spec") %>%
-    assign_value(!!rlang::call2("cubist_rules", !!!prm)) %>%
-    pipe_value(set_engine("Cubist"))
+  mod_syntax <- use_mod(prefix, "cubist_rules", "Cubist", mode, prm)
 
   route("library(rules)", path = pth, sep = "")
   route(rec_syntax, path = pth)
@@ -422,18 +365,13 @@ use_kernlab_svm_rbf <- function(formula, data, prefix = "kernlab", verbose = FAL
     add_comment(paste(dot_msg, zv_msg), add = verbose, colors = colors) %>%
     add_steps_normalization()
 
-  mod_mode <- model_mode(rec)
-
   if (tune) {
     prm <- rlang::exprs(cost = tune(), rbf_sigma = tune())
   } else {
     prm <- NULL
   }
 
-  mod_syntax <-
-    paste0(prefix, "_spec") %>%
-    assign_value(!!rlang::call2("svm_rbf", !!!prm)) %>%
-    pipe_value(set_mode(!!model_mode(rec)))
+  mod_syntax <- use_mod(prefix, "svm_rbf", "kernlab", model_mode(rec), prm)
 
   route(rec_syntax, path = pth)
   route(mod_syntax, path = pth)
@@ -456,18 +394,14 @@ use_kernlab_svm_poly <- function(formula, data, prefix = "kernlab", verbose = FA
   on.exit(unlink(pth))
 
   rec_cl <- initial_recipe_call(match.call())
-  rec_syntax <-
-    paste0(prefix, "_recipe") %>%
-    assign_value(!!rec_cl)
-
   rec <- recipes::recipe(formula, data)
 
   rec_syntax <-
-    rec_syntax %>%
+    rec_syntax <-
+    paste0(prefix, "_recipe") %>%
+    assign_value(!!rec_cl) %>%
     add_comment(paste(dot_msg, zv_msg), add = verbose, colors = colors) %>%
     add_steps_normalization()
-
-  mod_mode <- model_mode(rec)
 
   if (tune) {
     prm <- rlang::exprs(cost = tune(), degree = tune(), scale_factor = tune())
@@ -475,10 +409,7 @@ use_kernlab_svm_poly <- function(formula, data, prefix = "kernlab", verbose = FA
     prm <- NULL
   }
 
-  mod_syntax <-
-    paste0(prefix, "_spec") %>%
-    assign_value(!!rlang::call2("svm_poly", !!!prm)) %>%
-    pipe_value(set_mode(!!model_mode(rec)))
+  mod_syntax <- use_mod(prefix, "svm_poly", "kernlab", model_mode(rec), prm)
 
   route(rec_syntax, path = pth)
   route(mod_syntax, path = pth)
@@ -501,29 +432,29 @@ use_C5.0 <- function(formula, data, prefix = "C50", verbose = FALSE,
   on.exit(unlink(pth))
 
   rec_cl <- initial_recipe_call(match.call())
-  rec_syntax <-
-    paste0(prefix, "_recipe") %>%
-    assign_value(!!rec_cl)
-
   rec <- recipes::recipe(formula, data)
-  if (model_mode(rec) != "classification") {
+  mode <- model_mode(rec)
+
+  if (mode != "classification") {
     rlang::abort("C5.0 models are only for classification.")
   }
-  rec_syntax <-
-    rec_syntax %>%
-    factor_check(rec, add = verbose, colors = colors)
 
+  rec_syntax <- use_recipe(
+    prefix,
+    rec_cl,
+    rec,
+    add_dummy = FALSE,
+    add_normalization = FALSE,
+    verbose = verbose,
+    colors = colors
+  )
   if (tune) {
     prm <- rlang::exprs(trees = tune(), min_n = tune())
   } else {
     prm <- NULL
   }
 
-  mod_syntax <-
-    paste0(prefix, "_spec") %>%
-    assign_value(!!rlang::call2("boost_tree", !!!prm)) %>%
-    pipe_value(set_mode("classification")) %>%
-    pipe_value(set_engine("C5.0"))
+  mod_syntax <- use_mod(prefix, "boost_tree", "C5.0", mode, prm)
 
   route(rec_syntax, path = pth)
   route(mod_syntax, path = pth)
@@ -545,21 +476,17 @@ use_nnet <- function(formula, data, prefix = "nnet", verbose = FALSE,
   on.exit(unlink(pth))
 
   rec_cl <- initial_recipe_call(match.call())
-  rec_syntax <-
-    paste0(prefix, "_recipe") %>%
-    assign_value(!!rec_cl)
-
   rec <- recipes::recipe(formula, data)
 
-  if (has_factor_pred(rec)) {
-    rec_syntax <-
-      add_steps_dummy_vars(rec_syntax, add = verbose, colors = colors)
-  }
-
-  rec_syntax <-
-    rec_syntax %>%
-    factor_check(rec, add = verbose, colors = colors) %>%
-    add_steps_normalization()
+  rec_syntax <- use_recipe(
+    prefix,
+    rec_cl,
+    rec,
+    add_dummy = TRUE,
+    add_normalization = TRUE,
+    verbose = verbose,
+    colors = colors
+  )
 
   if (tune) {
     prm <- rlang::exprs(hidden_units = tune(), penalty = tune(), epochs = tune())
@@ -567,10 +494,7 @@ use_nnet <- function(formula, data, prefix = "nnet", verbose = FALSE,
     prm <- NULL
   }
 
-  mod_syntax <-
-    paste0(prefix, "_spec") %>%
-    assign_value(!!rlang::call2("mlp", !!!prm)) %>%
-    pipe_value(set_mode(!!model_mode(rec)))
+  mod_syntax <- use_mod(prefix, "mlp", "nnet", model_mode(rec), prm)
 
   route(rec_syntax, path = pth)
   route(mod_syntax, path = pth)
@@ -593,15 +517,17 @@ use_rpart <- function(formula, data, prefix = "rpart", verbose = FALSE,
   on.exit(unlink(pth))
 
   rec_cl <- initial_recipe_call(match.call())
-  rec_syntax <-
-    paste0(prefix, "_recipe") %>%
-    assign_value(!!rec_cl)
-
   rec <- recipe(formula, data)
 
-  rec_syntax <-
-    rec_syntax %>%
-    factor_check(rec, add = verbose, colors = colors)
+  rec_syntax <- use_recipe(
+    prefix,
+    rec_cl,
+    rec,
+    add_dummy = FALSE,
+    add_normalization = FALSE,
+    verbose = verbose,
+    colors = colors
+  )
 
   if (tune) {
     prm <-
@@ -612,11 +538,7 @@ use_rpart <- function(formula, data, prefix = "rpart", verbose = FALSE,
     prm <- NULL
   }
 
-  mod_syntax <-
-    paste0(prefix, "_spec") %>%
-    assign_value(!!rlang::call2("decision_tree", !!!prm)) %>%
-    pipe_value(set_mode(!!model_mode(rec))) %>%
-    pipe_value(set_engine("rpart"))
+  mod_syntax <- use_mod(prefix, "decision_tree", "rpart", model_mode(rec), prm)
 
   route(rec_syntax, path = pth)
   route(mod_syntax, path = pth)
@@ -638,15 +560,17 @@ use_bag_tree_rpart <- function(formula, data, prefix = "rpart", verbose = FALSE,
   on.exit(unlink(pth))
 
   rec_cl <- initial_recipe_call(match.call())
-  rec_syntax <-
-    paste0(prefix, "_recipe") %>%
-    assign_value(!!rec_cl)
-
   rec <- recipe(formula, data)
 
-  rec_syntax <-
-    rec_syntax %>%
-    factor_check(rec, add = verbose, colors = colors)
+  rec_syntax <- use_recipe(
+    prefix,
+    rec_cl,
+    rec,
+    add_dummy = FALSE,
+    add_normalization = FALSE,
+    verbose = verbose,
+    colors = colors
+  )
 
   if (tune) {
     prm <-
@@ -659,11 +583,7 @@ use_bag_tree_rpart <- function(formula, data, prefix = "rpart", verbose = FALSE,
     prm <- NULL
   }
 
-  mod_syntax <-
-    paste0(prefix, "_spec") %>%
-    assign_value(!!rlang::call2("bag_tree", !!!prm)) %>%
-    pipe_value(set_mode(!!model_mode(rec))) %>%
-    pipe_value(set_engine("rpart"))
+  mod_syntax <- use_mod(prefix, "bag_tree", "rpart", model_mode(rec), prm)
 
   route("library(baguette)", path = pth, sep = "")
   route(rec_syntax, path = pth)
@@ -678,23 +598,25 @@ use_bag_tree_rpart <- function(formula, data, prefix = "rpart", verbose = FALSE,
 
 #' @export
 #' @rdname templates
-use_mgcv <- function(formula, data, prefix = "gam", verbose = FALSE,
-                    tune = TRUE, colors = TRUE, clipboard = FALSE) {
+use_mgcv <- function(formula, data, prefix = "mgcv", verbose = FALSE,
+                     tune = TRUE, colors = TRUE, clipboard = FALSE) {
   check_clipboard(clipboard)
   colors <- check_color(colors, clipboard)
   pth <- output_loc(clipboard)
   on.exit(unlink(pth))
 
   rec_cl <- initial_recipe_call(match.call())
-  rec_syntax <-
-    paste0(prefix, "_recipe") %>%
-    assign_value(!!rec_cl)
-
   rec <- recipe(formula, data)
 
-  rec_syntax <-
-    rec_syntax %>%
-    factor_check(rec, add = verbose, colors = colors)
+  rec_syntax <- use_recipe(
+    prefix,
+    rec_cl,
+    rec,
+    add_dummy = FALSE,
+    add_normalization = FALSE,
+    verbose = verbose,
+    colors = colors
+  )
 
   if (tune) {
     prm <- rlang::exprs(
@@ -705,12 +627,9 @@ use_mgcv <- function(formula, data, prefix = "gam", verbose = FALSE,
     prm <- NULL
   }
 
-  mod_syntax <-
-    paste0(prefix, "_spec") %>%
-    assign_value(!!rlang::call2("gen_additive_mod", !!!prm)) %>%
-    pipe_value(set_mode(!!model_mode(rec))) %>%
-    pipe_value(set_engine("mgcv"))
+  mod_syntax <- use_mod(prefix, "gen_additive_mod", "mgcv", model_mode(rec), prm)
 
+  # add_model() for gam formula
   spec_expr <- rlang::call2(
     "add_model",
     sym(paste0(prefix, "_spec")),
@@ -736,23 +655,25 @@ use_mgcv <- function(formula, data, prefix = "gam", verbose = FALSE,
 
 #' @export
 #' @rdname templates
-use_dbarts <- function(formula, data, prefix = "bart", verbose = FALSE,
-                     tune = TRUE, colors = TRUE, clipboard = FALSE) {
+use_dbarts <- function(formula, data, prefix = "dbarts", verbose = FALSE,
+                       tune = TRUE, colors = TRUE, clipboard = FALSE) {
   check_clipboard(clipboard)
   colors <- check_color(colors, clipboard)
   pth <- output_loc(clipboard)
   on.exit(unlink(pth))
 
   rec_cl <- initial_recipe_call(match.call())
-  rec_syntax <-
-    paste0(prefix, "_recipe") %>%
-    assign_value(!!rec_cl)
-
   rec <- recipe(formula, data)
 
-  rec_syntax <-
-    rec_syntax %>%
-    factor_check(rec, add = verbose, colors = colors)
+  rec_syntax <- use_recipe(
+    prefix,
+    rec_cl,
+    rec,
+    add_dummy = FALSE,
+    add_normalization = FALSE,
+    verbose = verbose,
+    colors = colors
+  )
 
   if (tune) {
     prm <-
@@ -765,11 +686,7 @@ use_dbarts <- function(formula, data, prefix = "bart", verbose = FALSE,
     prm <- NULL
   }
 
-  mod_syntax <-
-    paste0(prefix, "_spec") %>%
-    assign_value(!!rlang::call2("bart", !!!prm)) %>%
-    pipe_value(set_mode(!!model_mode(rec))) %>%
-    pipe_value(set_engine("dbarts"))
+  mod_syntax <- use_mod(prefix, "bart", "dbarts", model_mode(rec), prm)
 
   route(rec_syntax, path = pth)
   route(mod_syntax, path = pth)
@@ -783,36 +700,30 @@ use_dbarts <- function(formula, data, prefix = "bart", verbose = FALSE,
 
 #' @export
 #' @rdname templates
-use_mixOmics <- function(formula, data, prefix = "pls", verbose = FALSE,
-                    tune = TRUE, colors = TRUE, clipboard = FALSE) {
+use_mixOmics <- function(formula, data, prefix = "mixOmics", verbose = FALSE,
+                         tune = TRUE, colors = TRUE, clipboard = FALSE) {
   check_clipboard(clipboard)
   colors <- check_color(colors, clipboard)
   pth <- output_loc(clipboard)
   on.exit(unlink(pth))
 
   rec_cl <- initial_recipe_call(match.call())
-  rec_syntax <-
-    paste0(prefix, "_recipe") %>%
-    assign_value(!!rec_cl)
-
   rec <- recipe(formula, data)
+  mode <- model_mode(rec)
 
-  if (model_mode(rec) != "regression") {
-    rlang::abort("PLS models are only for regression")
+  if (mode != "regression") {
+    rlang::abort("PLS models are only for regression.")
   }
 
-  rec_syntax <-
-    rec_syntax %>%
-    factor_check(rec, add = verbose, colors = colors)
-
-  if (has_factor_pred(rec)) {
-    rec_syntax <-
-      add_steps_dummy_vars(rec_syntax, add = verbose, colors = colors)
-  }
-
-  rec_syntax <-
-    rec_syntax %>%
-    add_steps_normalization()
+  rec_syntax <- use_recipe(
+    prefix,
+    rec_cl,
+    rec,
+    add_dummy = TRUE,
+    add_normalization = TRUE,
+    verbose = verbose,
+    colors = colors
+  )
 
   if (tune) {
     prm <-
@@ -822,11 +733,8 @@ use_mixOmics <- function(formula, data, prefix = "pls", verbose = FALSE,
   } else {
     prm <- NULL
   }
-  mod_syntax <-
-    paste0(prefix, "_spec") %>%
-    assign_value(!!rlang::call2("pls", !!!prm)) %>%
-    pipe_value(set_mode(!!model_mode(rec))) %>%
-    pipe_value(set_engine("mixOmics"))
+
+  mod_syntax <- use_mod(prefix, "pls", "mixOmics", mode, prm)
 
   route("library(plsmod)", path = pth, sep = "")
   route(rec_syntax, path = pth)
@@ -841,32 +749,24 @@ use_mixOmics <- function(formula, data, prefix = "pls", verbose = FALSE,
 
 #' @export
 #' @rdname templates
-use_xrf <- function(formula, data, prefix = "rule", verbose = FALSE,
-                         tune = TRUE, colors = TRUE, clipboard = FALSE) {
+use_xrf <- function(formula, data, prefix = "xrf", verbose = FALSE,
+                    tune = TRUE, colors = TRUE, clipboard = FALSE) {
   check_clipboard(clipboard)
   colors <- check_color(colors, clipboard)
   pth <- output_loc(clipboard)
   on.exit(unlink(pth))
 
   rec_cl <- initial_recipe_call(match.call())
-  rec_syntax <-
-    paste0(prefix, "_recipe") %>%
-    assign_value(!!rec_cl)
-
-  rec <- recipe(formula, data)
-
-  rec_syntax <-
-    rec_syntax %>%
-    factor_check(rec, add = verbose, colors = colors)
-
-  if (has_factor_pred(rec)) {
-    rec_syntax <-
-      add_steps_dummy_vars(rec_syntax, add = verbose, colors = colors)
-  }
-
-  rec_syntax <-
-    rec_syntax %>%
-    add_steps_normalization()
+  rec <- recipes::recipe(formula, data)
+  rec_syntax <- use_recipe(
+    prefix,
+    rec_cl,
+    rec,
+    add_dummy = TRUE,
+    add_normalization = TRUE,
+    verbose = verbose,
+    colors = colors
+  )
 
   if (tune) {
     prm <-
@@ -884,11 +784,7 @@ use_xrf <- function(formula, data, prefix = "rule", verbose = FALSE,
     prm <- NULL
   }
 
-  mod_syntax <-
-    paste0(prefix, "_spec") %>%
-    assign_value(!!rlang::call2("rule_fit", !!!prm)) %>%
-    pipe_value(set_mode(!!model_mode(rec))) %>%
-    pipe_value(set_engine("xrf"))
+  mod_syntax <- use_mod(prefix, "rule_fit", "xrf", model_mode(rec), prm)
 
   route("library(rules)", path = pth, sep = "")
   route(rec_syntax, path = pth)

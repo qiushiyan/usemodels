@@ -245,3 +245,32 @@ check_clipboard <- function(clipboard) {
   }
   invisible(NULL)
 }
+
+use_recipe <- function(prefix, rec_cl, rec, add_dummy, add_normalization, verbose, colors) {
+  rec_syntax <-
+    paste0(prefix, "_recipe") %>%
+    assign_value(!!rec_cl) %>%
+    factor_check(rec, add = verbose, colors = colors)
+
+  if (add_dummy) {
+    if (has_factor_pred(rec)) {
+      rec_syntax <- rec_syntax %>%
+        add_steps_dummy_vars(add = verbose, colors = colors)
+    }
+  }
+
+  if (add_normalization) {
+    rec_syntax <-
+      rec_syntax %>%
+      add_steps_normalization()
+  }
+
+  rec_syntax
+}
+
+use_mod <- function(prefix, mod, engine, mode, prm) {
+    paste0(prefix, "_spec") %>%
+    assign_value(!!rlang::call2(mod, !!!prm)) %>%
+    pipe_value(set_mode(!!mode)) %>%
+    pipe_value(set_engine(!!engine))
+}
